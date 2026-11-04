@@ -3,12 +3,12 @@ import QtQuick.Controls as C
 import Unisic.Kit
 
 // Numeric dropdown: a preset list plus a free-entry "Custom" field at the
-// bottom. A typed value applies immediately but is NEVER added to the preset
-// list. Same popup pattern as UComboBox - anchored to the field and contained
-// by UFlyout's rule (which is where the whole story lives), so it escapes
-// Flickable clipping AND can never hang off the window. Optional `tooltip`
-// shows on hover (used for hints like "0 = keep open" that used to bloat the
-// row label).
+// bottom. A typed value applies on Enter or on a click away (Escape drops it),
+// clamped to from..to, and is NEVER added to the preset list. Same popup
+// pattern as UComboBox - anchored to the field and contained by UFlyout's rule
+// (which is where the whole story lives), so it escapes Flickable clipping AND
+// can never hang off the window. Optional `tooltip` shows on hover (used for
+// hints like "0 = keep open" that used to bloat the row label).
 Rectangle {
     id: root
 
@@ -85,8 +85,8 @@ Rectangle {
 
         MouseArea {
             anchors.fill: parent
-            onClicked: popup.close()
-            onWheel: (w) => { popup.close(); w.accepted = false }
+            onClicked: popup._leave()
+            onWheel: (w) => { popup._leave(); w.accepted = false }
         }
     }
 
@@ -271,6 +271,23 @@ Rectangle {
             popup.close()
             root.forceActiveFocus(Qt.OtherFocusReason)
         }
+        // The custom field's commit. A number typed and then left by clicking
+        // elsewhere is applied too, not thrown away: the value was in the field,
+        // the popup closed, and the setting silently stayed as it was (#135).
+        function _commitCustom() {
+            var v = parseInt(customField.text)
+            if (isNaN(v))
+                return false
+            popup.close()
+            root._apply(v)
+            return true
+        }
+        // Only a number still being typed counts: the field's first Escape
+        // leaves it, and that drops the number even though it stays visible.
+        function _leave() {
+            if (!(customField.inputActiveFocus && popup._commitCustom()))
+                popup.close()
+        }
         function _listKey(e) {
             // Re-entrant tail of a key the custom field already applied - the
             // choice is over, so there is nothing left to do with it.
@@ -404,17 +421,19 @@ Rectangle {
                 width: parent.width
                 implicitHeight: 34
                 placeholder: qsTr("Custom…")
-                validator: IntValidator { bottom: root.from; top: root.to }
+                // Digits only, and NO range here: _apply() clamps. A range on
+                // the validator made anything outside from..to "intermediate",
+                // so Enter never fired accepted, the key fell through to the
+                // list handler and closed the popup with the value unchanged:
+                // 15 on a 0-10 countdown, or 5 on a field starting at 10, just
+                // vanished (#135).
+                validator: IntValidator { bottom: Math.min(0, root.from) }
                 onAccepted: {
-                    var v = parseInt(text)
-                    if (!isNaN(v)) {
-                        popup.close()
-                        root._apply(v)
-                        // Same as the list's own commit: the field this was
-                        // typed into dies with the popup, so hand focus back
-                        // instead of dropping the user out of the tab order.
+                    // Same as the list's own commit: the field this was typed
+                    // into dies with the popup, so hand focus back instead of
+                    // dropping the user out of the tab order.
+                    if (popup._commitCustom())
                         root.forceActiveFocus(Qt.OtherFocusReason)
-                    }
                 }
             }
         }
