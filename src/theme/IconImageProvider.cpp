@@ -120,8 +120,13 @@ QPixmap IconImageProvider::requestPixmap(const QString &id, QSize *size, const Q
     }
 
     if (system) {
+        // Not just !isNull(): KDE's icon engine answers a name the theme
+        // lacks with its parent ("text-outline" draws "text", "upload-cloud"
+        // draws "upload"), so text-outline, text-background and text-marked
+        // were one glyph. hasThemeIcon is false for such a stand-in, which
+        // sends it on to the bundled glyph below.
         QIcon icon = QIcon::fromTheme(name);
-        if (!icon.isNull()) {
+        if (!icon.isNull() && QIcon::hasThemeIcon(name)) {
             // Tint the system glyph to the requested app-theme colour: the raw
             // fromTheme pixmap follows the SYSTEM scheme and clashes with (or
             // vanishes on) a custom app theme. On the actual "system" theme the
