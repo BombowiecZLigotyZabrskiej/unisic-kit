@@ -38,15 +38,30 @@ ThemeController::ThemeController(QObject *parent) : QObject(parent)
     // the System theme came up light (#118). One blocking read, capped at
     // 250 ms so a missing or hung portal costs startup at most that, then the
     // change signal keeps it live.
+    //
+    // The read goes over its OWN short-lived connection, never Qt's shared
+    // session bus one: the portal ties a connection to an app id on the
+    // first call it sees, so a read that beat Qt's
+    // org.freedesktop.host.portal.Registry.Register there made Register fail
+    // with "Connection already associated with an application ID" (#123),
+    // leaving permissions in the anonymous "" bucket. Since the app names
+    // its desktop id before QApplication, Qt 6.11 registers first (Register
+    // is the shared connection's third message, ReadOne comes later), so
+    // this is a guard in case that order ever changes.
+    const QString scratchName = QStringLiteral("unisic-theme-scheme");
+    {
+        QDBusConnection scratch = QDBusConnection::connectToBus(QDBusConnection::SessionBus, scratchName);
+        QDBusMessage read = QDBusMessage::createMethodCall(
+            QStringLiteral("org.freedesktop.portal.Desktop"),
+            QStringLiteral("/org/freedesktop/portal/desktop"),
+            QStringLiteral("org.freedesktop.portal.Settings"), QStringLiteral("ReadOne"));
+        read << QStringLiteral("org.freedesktop.appearance") << QStringLiteral("color-scheme");
+        const QDBusMessage reply = scratch.call(read, QDBus::Block, 250);
+        if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
+            m_portalScheme = portalScheme(reply.arguments().constFirst());
+    }
+    QDBusConnection::disconnectFromBus(scratchName);
     QDBusConnection bus = QDBusConnection::sessionBus();
-    QDBusMessage read = QDBusMessage::createMethodCall(
-        QStringLiteral("org.freedesktop.portal.Desktop"),
-        QStringLiteral("/org/freedesktop/portal/desktop"),
-        QStringLiteral("org.freedesktop.portal.Settings"), QStringLiteral("ReadOne"));
-    read << QStringLiteral("org.freedesktop.appearance") << QStringLiteral("color-scheme");
-    const QDBusMessage reply = bus.call(read, QDBus::Block, 250);
-    if (reply.type() == QDBusMessage::ReplyMessage && !reply.arguments().isEmpty())
-        m_portalScheme = portalScheme(reply.arguments().constFirst());
     // The three inputs systemDark() weighs, so a "wrong theme on my desktop"
     // report carries its own answer in the log.
     qInfo().noquote() << "ThemeController: portal color-scheme" << m_portalScheme
