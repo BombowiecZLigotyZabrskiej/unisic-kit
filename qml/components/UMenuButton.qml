@@ -78,6 +78,7 @@ Rectangle {
     implicitWidth: iconOnly ? 38 : rowC.implicitWidth + 34
     implicitHeight: 42
     radius: height / 2
+    opacity: root.enabled ? 1.0 : 0.4
     color: (popup.opened || _hovered) ? Qt.lighter(Theme.tertiary, 1.12) : Theme.tertiary
     border.width: 1
     border.color: popup.opened ? Theme.accent : Theme.divider
