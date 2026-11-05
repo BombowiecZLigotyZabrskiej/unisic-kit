@@ -409,11 +409,21 @@ bool X11ShmGrabber::isAvailable()
     return QGuiApplication::platformName() == QLatin1String("windows");
 }
 
-// Qt keeps each screen's origin in native pixels and scales only its size.
+// Qt keeps each screen's origin in native pixels and scales only its size, so
+// the origin finds the monitor and Windows gives its exact native size. A size
+// rebuilt from the dpr can round a pixel past the edge (2560 px at 150% is
+// 1707 logical, 2561 back), and no DXGI output contains that, so every frame
+// would go through GDI.
 QRect X11ShmGrabber::screenRect(const QScreen *screen)
 {
-    const qreal dpr = screen->devicePixelRatio() > 0 ? screen->devicePixelRatio() : 1.0;
     const QRect g = screen->geometry();
+    MONITORINFO mi{};
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfoW(MonitorFromPoint(POINT{g.left(), g.top()}, MONITOR_DEFAULTTONULL), &mi)) {
+        const RECT &r = mi.rcMonitor;
+        return QRect(int(r.left), int(r.top), int(r.right - r.left), int(r.bottom - r.top));
+    }
+    const qreal dpr = screen->devicePixelRatio() > 0 ? screen->devicePixelRatio() : 1.0;
     return QRect(g.topLeft(), QSize(qRound(g.width() * dpr), qRound(g.height() * dpr)));
 }
 
