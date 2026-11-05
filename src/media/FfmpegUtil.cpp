@@ -1,6 +1,7 @@
 #include "FfmpegUtil.h"
 #include <QBuffer>
 #include <QDebug>
+#include <QFile>
 #include <QFileInfo>
 #include <QHash>
 #include <QImage>
@@ -219,10 +220,16 @@ bool hardwareEncoderWorks(const QString &id)
     return ok;
 }
 
-void stopProcess(QProcess *&process)
+void stopProcess(QProcess *&process, const QStringList &removeAfter)
 {
-    if (!process)
+    const auto removeFiles = [removeAfter] {
+        for (const QString &f : removeAfter)
+            QFile::remove(f);
+    };
+    if (!process) {
+        removeFiles();
         return;
+    }
     QProcess *p = process;
     process = nullptr;
     // Standalone: the recorder version disconnected only p->this; with no owner
@@ -231,16 +238,21 @@ void stopProcess(QProcess *&process)
     QObject::disconnect(p, nullptr, nullptr, nullptr);
     if (p->state() == QProcess::NotRunning) {
         p->deleteLater();
+        removeFiles();
         return;
     }
     // Non-blocking escalation: the old terminate + waitForFinished(1000) +
     // kill + waitForFinished(3000) froze the GUI for up to 4 s per process on
     // every cancel/failure (ffmpeg can be slow to flush after SIGTERM). The
-    // detached process reaps itself via finished -> deleteLater; removing the
-    // temp files right after stays correct on Linux (ffmpeg keeps writing to
-    // the unlinked inode, the space is reclaimed when it exits). The singleShot
+    // detached process reaps itself via finished -> deleteLater, and only then
+    // drops removeAfter: Linux could unlink under the writer, Windows refuses
+    // while ffmpeg holds the file, and its terminate() is a WM_CLOSE a console
+    // ffmpeg never reads, so there the exit is the kill below. The singleShot
     // is parented to p, so it auto-cancels if the process dies sooner.
-    QObject::connect(p, &QProcess::finished, p, &QObject::deleteLater);
+    QObject::connect(p, &QProcess::finished, p, [p, removeFiles] {
+        removeFiles();
+        p->deleteLater();
+    });
     p->closeWriteChannel();
     p->terminate();
     QTimer::singleShot(1000, p, [p] {

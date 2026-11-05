@@ -1,6 +1,7 @@
 #pragma once
 #include <QString>
 #include <QSet>
+#include <QStringList>
 
 class QImage;
 class QProcess;
@@ -71,7 +72,9 @@ QByteArray encodeStillGif(const QImage &image, int quality);
 // Non-blocking graceful teardown of a QProcess. Disconnects it, then (if still
 // running) closeWriteChannel() -> terminate() -> SIGKILL after 1 s. The process
 // reaps itself (finished -> deleteLater), so this never blocks the caller. The
-// passed pointer is nulled.
-void stopProcess(QProcess *&process);
+// passed pointer is nulled. removeAfter: files to delete once the process is
+// gone (at once when there is none). Windows cannot delete a file a process
+// still has open, so a remove right after this call silently fails there.
+void stopProcess(QProcess *&process, const QStringList &removeAfter = {});
 
 } // namespace FfmpegUtil
